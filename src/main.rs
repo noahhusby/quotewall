@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use garde::{Validate};
 use image::codecs::jpeg::JpegDecoder;
 use image::ImageDecoder;
+use log::info;
 use rust_embed::Embed;
 use tokio::sync::oneshot;
 use crate::printer::{start_printer_worker, PrintJob, PrinterCommand, StatusJob, SubmissionImage, SubmissionType};
@@ -74,6 +75,8 @@ async fn main() {
         .route("/api/printer/status", get(printer_status))
         .route("/{*path}", get(asset))
         .with_state(state);
+
+    info!("Starting quotewall on 0.0.0.0:3000");
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();

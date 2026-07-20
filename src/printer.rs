@@ -1,3 +1,5 @@
+use std::cmp::PartialEq;
+use std::io::{Cursor, Read};
 use std::path::Path;
 use crate::SubmissionPayload;
 use serde::Deserialize;
@@ -13,8 +15,12 @@ use tokio::sync::oneshot;
 use escpos::{
     errors::Result as EscposResult
 };
+use escpos::ui::line::{Line, LineBuilder, LineStyle};
+use image::{DynamicImage, GrayImage, ImageFormat};
+use image::imageops::FilterType;
+use crate::printer::SubmissionType::Wisdom;
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum  SubmissionType {
     Wisdom,
@@ -151,22 +157,90 @@ fn check_printer(printer: &mut Printer<FileDriver>) -> PrinterAvailability {
 
 fn print_job(printer: &mut Printer<FileDriver>, job: &PrintJob) -> EscposResult<()> {
     // Actual ESC/POS output will use `printer` and `job` here later.
+    let title = if job.submission.r#type == Wisdom {
+        String::from("Words of Wisdom")
+    } else {
+        String::from("Quote")
+    };
+
     printer.init()?
         .smoothing(true)?
-        .bold(true)?
-        .underline(UnderlineMode::Single)?
-        .writeln("Bold underline")?
         .justify(JustifyMode::CENTER)?
+        .size(3,2)?
+        .bold(true)?
         .reverse(true)?
-        .bold(false)?
-        .writeln("Hello world - Reverse")?
-        .feed()?
-        .justify(JustifyMode::RIGHT)?
+        .writeln(&*title)?
+        .reset_size()?
         .reverse(false)?
-        .underline(UnderlineMode::None)?
-        .size(2, 3)?
-        .writeln("Hello world - Normal")?
-        .print_cut()?;
+        .bold(false)?
+        .feed()?
+        .draw_line(LineBuilder::new().style(LineStyle::Simple).offset(4).build())?;
+
+    if let Some(image) = &job.image {
+        let dithered = prepare_receipt_image(&image.bytes)?;
+        printer.bit_image_from_bytes(&dithered)?;
+    }
+
+        // .writeln("Bold underline")?
+        // .justify(JustifyMode::CENTER)?
+        // .reverse(true)?
+        // .bold(false)?
+        // .writeln("Hello world - Reverse")?
+        // .feed()?
+        // .justify(JustifyMode::RIGHT)?
+        // .reverse(false)?
+        // .underline(UnderlineMode::None)?
+        // .size(2, 3)?
+        // .writeln("Hello world - Normal")?
+        printer.print_cut()?;
     println!("--- RECEIPT ---");
     Ok(())
+}
+
+fn prepare_receipt_image(bytes: &[u8]) -> image::ImageResult<Vec<u8>> {
+    const PRINT_WIDTH: u32 = 384;
+
+    let source = image::load_from_memory(bytes)?;
+    let resized = source.resize(PRINT_WIDTH, u32::MAX, FilterType::Lanczos3);
+    let grayscale = resized.to_luma8();
+    let contrasted = image::imageops::contrast(&grayscale, 15.0);
+    let sharpened = image::imageops::unsharpen(&contrasted, 1.0, 1);
+    let dithered = floyd_steinberg(sharpened);
+
+    let mut png = Cursor::new(Vec::new());
+    DynamicImage::ImageLuma8(dithered)
+        .write_to(&mut png, ImageFormat::Png)?;
+
+    Ok(png.into_inner())
+}
+
+fn floyd_steinberg(image: GrayImage) -> GrayImage {
+    let (width, height) = image.dimensions();
+    let mut luminance: Vec<f32> = image.pixels().map(|pixel| f32::from(pixel[0])).collect();
+    let mut output = GrayImage::new(width, height);
+
+    for y in 0..height {
+        for x in 0..width {
+            let index = (y * width + x) as usize;
+            let old = luminance[index].clamp(0.0, 255.0);
+            let new = if old < 128.0 { 0 } else { 255 };
+            let error = old - f32::from(new);
+            output.put_pixel(x, y, image::Luma([new]));
+
+            if x + 1 < width {
+                luminance[index + 1] += error * 7.0 / 16.0;
+            }
+            if y + 1 < height {
+                if x > 0 {
+                    luminance[(index + width as usize) - 1] += error * 3.0 / 16.0;
+                }
+                luminance[index + width as usize] += error * 5.0 / 16.0;
+                if x + 1 < width {
+                    luminance[index + width as usize + 1] += error / 16.0;
+                }
+            }
+        }
+    }
+
+    output
 }
