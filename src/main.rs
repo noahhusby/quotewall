@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use garde::{Validate};
 use image::codecs::jpeg::JpegDecoder;
 use image::ImageDecoder;
-use log::info;
 use rust_embed::Embed;
 use tokio::sync::oneshot;
 use crate::printer::{start_printer_worker, PrintJob, PrinterCommand, StatusJob, SubmissionImage, SubmissionType};
@@ -50,12 +49,6 @@ struct SuccessResponse {
     message: &'static str,
 }
 
-#[derive(Serialize)]
-struct PrinterStatusResponse {
-    available: bool,
-    message: String,
-}
-
 #[derive(Clone)]
 struct AppState {
     printer_tx: SyncSender<PrinterCommand>
@@ -63,8 +56,6 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
-
     let state = AppState {
         printer_tx: start_printer_worker(),
     };
@@ -76,7 +67,7 @@ async fn main() {
         .route("/{*path}", get(asset))
         .with_state(state);
 
-    info!("Starting quotewall on 0.0.0.0:3000");
+    println!("Starting quotewall on 0.0.0.0:3000");
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -143,11 +134,7 @@ async fn printer_status(State(state): State<AppState>) -> Result<Response, ApiEr
         })?
         .map_err(|_| service_unavailable("The printer worker stopped unexpectedly"))?;
 
-    Ok(Json(PrinterStatusResponse {
-        available: status.available,
-        message: status.message,
-    })
-        .into_response())
+    Ok(Json(status).into_response())
 }
 
 
@@ -201,7 +188,6 @@ async fn parse_submission(mut multipart: Multipart) -> Result<(SubmissionPayload
                     return Err(bad_request("The image must be a JPEG"));
                 }
 
-                let filename = field.file_name().map(str::to_owned);
                 let bytes = field
                     .bytes()
                     .await
@@ -222,7 +208,6 @@ async fn parse_submission(mut multipart: Multipart) -> Result<(SubmissionPayload
 
                 image = Some(SubmissionImage {
                     bytes: owned_bytes,
-                    filename,
                 });
             }
             _ => return Err(bad_request(format!("Unknown field: {name}"))),

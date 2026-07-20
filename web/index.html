@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#ffffff">
+    <title>Quotewall</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js" defer></script>
+</head>
+<body>
+<main class="page">
+    <header class="masthead">
+        <h1>Quotewall</h1>
+        <p> Sometimes a real good quote needs remembering .</p>
+        <div class="divider" aria-hidden="true"></div>
+    </header>
+
+    <section id="printer-notice" class="printer-notice" role="status" hidden>
+        <h2>The printer is taking a break.</h2>
+        <p id="printer-message">Please check back in a little while.</p>
+    </section>
+
+    <form id="submission-form" novalidate>
+        <div class="field">
+            <div class="field-heading">
+                <label for="message">Message</label>
+                <span id="character-count">0 / 500</span>
+            </div>
+            <textarea
+                    id="message"
+                    name="message"
+                    rows="7"
+                    maxlength="500"
+                    placeholder="What would you like to share?"
+                    required
+            ></textarea>
+        </div>
+
+        <div class="field">
+            <div class="field-heading">
+                <label for="author">Author</label>
+                <span>Optional</span>
+            </div>
+            <input
+                    id="author"
+                    name="author"
+                    type="text"
+                    maxlength="100"
+                    autocomplete="off"
+                    placeholder="Who said it?"
+            >
+        </div>
+
+        <div class="field">
+            <div class="field-heading">
+                <span class="field-label">Image</span>
+                <span>Optional</span>
+            </div>
+
+            <div class="image-actions">
+                <button id="upload-button" class="secondary-button" type="button">
+                    Choose an image
+                </button>
+                <button id="camera-button" class="secondary-button" type="button">
+                    Take a photo
+                </button>
+            </div>
+
+            <input id="upload-input" type="file" accept="image/*" hidden>
+            <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
+
+            <div id="image-preview" class="image-preview" hidden>
+                <img id="preview-image" alt="Selected image preview">
+                <div class="image-details">
+                    <p id="image-name"></p>
+                    <button id="remove-image" class="text-button" type="button">Remove</button>
+                </div>
+            </div>
+        </div>
+
+        <p id="form-status" class="form-status" role="status" aria-live="polite"></p>
+
+        <button id="submit-button" class="submit-button" type="submit">
+            Send to Quotewall
+        </button>
+    </form>
+</main>
+</body>
+</html>

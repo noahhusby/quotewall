@@ -1,24 +1,24 @@
-use std::cmp::PartialEq;
-use std::io::{Cursor, Read};
-use std::path::Path;
+use crate::printer::SubmissionType::Wisdom;
 use crate::SubmissionPayload;
-use serde::Deserialize;
+use chrono::Utc;
+use chrono_tz::America::Chicago;
+use escpos::driver::{Driver, FileDriver};
+use escpos::printer::Printer;
+use escpos::printer_options::PrinterOptions;
+use escpos::ui::line::{LineBuilder, LineStyle};
+use escpos::utils::{JustifyMode, Protocol, RealTimeStatusRequest, RealTimeStatusResponse};
+use escpos::errors::Result as EscposResult;
+use image::imageops::FilterType;
+use image::{DynamicImage, GrayImage, ImageFormat};
+use serde::{Deserialize, Serialize};
+use std::cmp::PartialEq;
+use std::io::Cursor;
+use std::path::Path;
 use std::sync::mpsc;
 use std::sync::mpsc::SyncSender;
 use std::thread;
 use std::time::Duration;
-use escpos::driver::FileDriver;
-use escpos::printer::Printer;
-use escpos::printer_options::PrinterOptions;
-use escpos::utils::{JustifyMode, Protocol, UnderlineMode};
 use tokio::sync::oneshot;
-use escpos::{
-    errors::Result as EscposResult
-};
-use escpos::ui::line::{Line, LineBuilder, LineStyle};
-use image::{DynamicImage, GrayImage, ImageFormat};
-use image::imageops::FilterType;
-use crate::printer::SubmissionType::Wisdom;
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -29,7 +29,6 @@ pub enum  SubmissionType {
 
 pub struct SubmissionImage {
     pub bytes: Vec<u8>,
-    pub filename: Option<String>,
 }
 
 pub struct PrintJob {
@@ -42,8 +41,11 @@ pub struct StatusJob {
     pub reply: oneshot::Sender<PrinterAvailability>
 }
 
+#[derive(Serialize)]
 pub struct PrinterAvailability {
     pub available: bool,
+    pub paper_present: bool,
+    pub paper_low: bool,
     pub message: String,
 }
 
@@ -129,12 +131,22 @@ pub fn start_printer_worker() -> SyncSender<PrinterCommand> {
                         ));
                         connection = connect();
 
-                        let status = match connection.as_mut() {
-                            Ok((_driver, printer)) => check_printer(printer),
-                            Err(error) => PrinterAvailability {
-                                available: false,
-                                message: error.clone(),
-                            },
+                        let status_result = match connection.as_mut() {
+                            Ok((driver, printer)) => check_printer(driver, printer),
+                            Err(error) => Err(error.clone()),
+                        };
+
+                        let status = match status_result {
+                            Ok(status) => status,
+                            Err(error) => {
+                                connection = Err(error.clone());
+                                PrinterAvailability {
+                                    available: false,
+                                    paper_present: false,
+                                    paper_low: false,
+                                    message: error,
+                                }
+                            }
                         };
                         let _ = job.reply.send(status);
                     }
@@ -146,54 +158,110 @@ pub fn start_printer_worker() -> SyncSender<PrinterCommand> {
     printer_tx
 }
 
-fn check_printer(printer: &mut Printer<FileDriver>) -> PrinterAvailability {
-    // A real ESC/POS status query will use `printer` here later. For now,
-    // reaching this function means the device was successfully reopened.
-    PrinterAvailability {
-        available: true,
-        message: "Printer is available.".to_owned(),
+fn check_printer(
+    driver: &FileDriver,
+    printer: &mut Printer<FileDriver>,
+) -> Result<PrinterAvailability, String> {
+    printer
+        .real_time_status(RealTimeStatusRequest::Printer)
+        .and_then(|printer| printer.real_time_status(RealTimeStatusRequest::RollPaperSensor))
+        .and_then(Printer::send_status)
+        .map_err(|error| error.to_string())?;
+
+    let mut response = [0_u8; 2];
+    let bytes_read = driver
+        .read(&mut response)
+        .map_err(|error| error.to_string())?;
+
+    if bytes_read != response.len() {
+        return Err(format!(
+            "Incomplete printer status response: expected 2 bytes, received {bytes_read}"
+        ));
     }
+
+    let printer_status = RealTimeStatusResponse::parse(RealTimeStatusRequest::Printer, response[0])
+        .map_err(|error| error.to_string())?;
+    let paper_status =
+        RealTimeStatusResponse::parse(RealTimeStatusRequest::RollPaperSensor, response[1])
+            .map_err(|error| error.to_string())?;
+
+    let available = printer_status
+        .get(&RealTimeStatusResponse::Online)
+        .copied()
+        .unwrap_or(false);
+    let paper_present = paper_status
+        .get(&RealTimeStatusResponse::RollPaperEndSensorPaperPresent)
+        .copied()
+        .unwrap_or(false);
+    let paper_adequate = paper_status
+        .get(&RealTimeStatusResponse::RollPaperNearEndSensorPaperAdequate)
+        .copied()
+        .unwrap_or(false);
+    let paper_low = paper_present && !paper_adequate;
+
+    let message = if !available {
+        "Printer is offline."
+    } else if !paper_present {
+        "Printer is out of paper."
+    } else if paper_low {
+        "Printer is available, but the paper roll is running low."
+    } else {
+        "Printer is available."
+    };
+
+    Ok(PrinterAvailability {
+        available,
+        paper_present,
+        paper_low,
+        message: message.to_owned(),
+    })
 }
 
 fn print_job(printer: &mut Printer<FileDriver>, job: &PrintJob) -> EscposResult<()> {
-    // Actual ESC/POS output will use `printer` and `job` here later.
+    println!("{}", format!("Incoming print job: {} {:?}", job.submission.message, job.submission.author));
     let title = if job.submission.r#type == Wisdom {
         String::from("Words of Wisdom")
     } else {
         String::from("Quote")
     };
 
+    let date_time = Utc::now()
+        .with_timezone(&Chicago)
+        .format("%m/%d/%Y %I:%M %p")
+        .to_string();
+
     printer.init()?
         .smoothing(true)?
         .justify(JustifyMode::CENTER)?
         .size(3,2)?
-        .bold(true)?
-        .reverse(true)?
         .writeln(&*title)?
         .reset_size()?
         .reverse(false)?
         .bold(false)?
+        .reset_size()?
+        .writeln(&*date_time)?
         .feed()?
-        .draw_line(LineBuilder::new().style(LineStyle::Simple).offset(4).build())?;
+        .draw_line(LineBuilder::new().style(LineStyle::Simple).build())?;
+
+
+    printer.feed()?
+        .writeln(&*format!("\"{}\"", job.submission.message))?
+        .feed()?;
+
+    if let Some(author) = &job.submission.author {
+        printer.justify(JustifyMode::RIGHT)?
+            .bold(true)?
+            .writeln(&*format!("- {}", author))?;
+    }
 
     if let Some(image) = &job.image {
         let dithered = prepare_receipt_image(&image.bytes)?;
-        printer.bit_image_from_bytes(&dithered)?;
+        printer.justify(JustifyMode::CENTER)?
+            .feed()?
+            .bit_image_from_bytes(&dithered)?;
     }
 
-        // .writeln("Bold underline")?
-        // .justify(JustifyMode::CENTER)?
-        // .reverse(true)?
-        // .bold(false)?
-        // .writeln("Hello world - Reverse")?
-        // .feed()?
-        // .justify(JustifyMode::RIGHT)?
-        // .reverse(false)?
-        // .underline(UnderlineMode::None)?
-        // .size(2, 3)?
-        // .writeln("Hello world - Normal")?
         printer.print_cut()?;
-    println!("--- RECEIPT ---");
     Ok(())
 }
 
