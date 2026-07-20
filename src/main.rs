@@ -32,7 +32,6 @@ struct ApiErrorBody {
     error: String,
 }
 
-
 #[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 struct SubmissionPayload {
@@ -79,8 +78,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
-
-
 
 async fn print_submission(State(state): State<AppState>, multipart: Multipart) -> Result<Response, ApiError> {
     let (submission, image) = parse_submission(multipart).await?;
@@ -168,9 +165,9 @@ async fn parse_submission(mut multipart: Multipart) -> Result<(SubmissionPayload
             "submission" => {
                 reject_duplicate(&submission, "submission")?;
 
-                if field.content_type() != Some("application/json") {
-                    return Err(bad_request("The submission part must use application/json"));
-                }
+                // if field.content_type() != Some("application/json") && field.content_type() != Some("text/plain") {
+                //     return Err(bad_request("The submission part must use application/json"));
+                // }
 
                 let bytes = field
                     .bytes()
