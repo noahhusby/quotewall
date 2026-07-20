@@ -179,7 +179,7 @@ form.addEventListener("submit", async (event) => {
         setFormStatus(error instanceof Error ? error.message : "Something went wrong.", "error");
     } finally {
         submitButton.disabled = false;
-        submitButton.textContent = "Send to Quotewall";
+        submitButton.textContent = "Memorialize the quote";
     }
 });
 
