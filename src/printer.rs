@@ -235,7 +235,7 @@ fn print_job(printer: &mut Printer<FileDriver>, job: &PrintJob) -> EscposResult<
         .feed()?
         .justify(JustifyMode::RIGHT)?
         .bold(true)?
-        .writeln(&*format!("- {}", &job.submission.author))?;;
+        .writeln(&*format!("- {}", &job.submission.author))?;
 
     if let Some(image) = &job.image {
         let dithered = prepare_receipt_image(&image.bytes)?;
