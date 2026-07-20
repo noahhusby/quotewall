@@ -146,7 +146,6 @@ form.addEventListener("submit", async (event) => {
 
     try {
         const submission = {
-            type: "quote",
             message: messageInput.value.trim(),
             author: authorInput.value.trim(),
         };
