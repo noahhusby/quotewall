@@ -20,6 +20,22 @@ const MAX_IMAGE_DIMENSION = 1024;
 let selectedImage = null;
 let previewUrl = null;
 
+function removeUnsupportedCharacters(input, allowNewlines = false) {
+    const unsupported = allowNewlines ? /[^\x20-\x7E\n]/g : /[^\x20-\x7E]/g;
+    const cleaned = input.value.replace(unsupported, "");
+
+    if (cleaned !== input.value) {
+        const cursor = input.selectionStart;
+        const removedBeforeCursor = input.value
+            .slice(0, cursor)
+            .replace(/[\x20-\x7E\n]/g, "").length;
+
+        input.value = cleaned;
+        input.setSelectionRange(cursor - removedBeforeCursor, cursor - removedBeforeCursor);
+        setFormStatus("Emoji and unsupported symbols have been removed.", "error");
+    }
+}
+
 function updateCharacterCount() {
     characterCount.textContent = `${messageInput.value.length} / 500`;
 }
@@ -108,7 +124,11 @@ async function checkPrinter() {
     }
 }
 
-messageInput.addEventListener("input", updateCharacterCount);
+messageInput.addEventListener("input", () => {
+    removeUnsupportedCharacters(messageInput, true);
+    updateCharacterCount();
+});
+authorInput.addEventListener("input", () => removeUnsupportedCharacters(authorInput));
 uploadButton.addEventListener("click", () => uploadInput.click());
 cameraButton.addEventListener("click", () => cameraInput.click());
 uploadInput.addEventListener("change", () => chooseImage(uploadInput.files[0]));
