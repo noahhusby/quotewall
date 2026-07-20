@@ -15,7 +15,7 @@ use image::codecs::jpeg::JpegDecoder;
 use image::ImageDecoder;
 use rust_embed::Embed;
 use tokio::sync::oneshot;
-use crate::printer::{start_printer_worker, PrintJob, PrinterCommand, StatusJob, SubmissionImage, SubmissionType};
+use crate::printer::{start_printer_worker, PrintJob, PrinterCommand, StatusJob, SubmissionImage};
 
 const MAX_IMAGE_DIMENSION: u32 = 1024;
 const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
@@ -35,12 +35,10 @@ struct ApiErrorBody {
 #[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 struct SubmissionPayload {
-    #[garde(skip)]
-    r#type: SubmissionType,
     #[garde(length(chars, min=1, max=500))]
     message: String,
     #[garde(length(chars, min=1, max=50))]
-    author: Option<String>,
+    author: String,
 }
 
 #[derive(Serialize)]
@@ -171,10 +169,9 @@ async fn parse_submission(mut multipart: Multipart) -> Result<(SubmissionPayload
                     ));
                 }
 
-                let mut parsed: SubmissionPayload = serde_json::from_slice(&bytes)
+                let parsed: SubmissionPayload = serde_json::from_slice(&bytes)
                     .map_err(|error| bad_request(format!("Invalid submission JSON: {error}")))?;
 
-                //parsed.normalize();
                 parsed
                     .validate()
                     .map_err(|report| bad_request(format!("Invalid submission: {report}")))?;

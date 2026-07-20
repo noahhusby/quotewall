@@ -1,17 +1,15 @@
-use crate::printer::SubmissionType::Wisdom;
 use crate::SubmissionPayload;
 use chrono::Utc;
 use chrono_tz::America::Chicago;
 use escpos::driver::{Driver, FileDriver};
+use escpos::errors::Result as EscposResult;
 use escpos::printer::Printer;
 use escpos::printer_options::PrinterOptions;
 use escpos::ui::line::{LineBuilder, LineStyle};
 use escpos::utils::{JustifyMode, Protocol, RealTimeStatusRequest, RealTimeStatusResponse};
-use escpos::errors::Result as EscposResult;
 use image::imageops::FilterType;
 use image::{DynamicImage, GrayImage, ImageFormat};
-use serde::{Deserialize, Serialize};
-use std::cmp::PartialEq;
+use serde::Serialize;
 use std::io::Cursor;
 use std::path::Path;
 use std::sync::mpsc;
@@ -19,13 +17,6 @@ use std::sync::mpsc::SyncSender;
 use std::thread;
 use std::time::Duration;
 use tokio::sync::oneshot;
-
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum  SubmissionType {
-    Wisdom,
-    Quote,
-}
 
 pub struct SubmissionImage {
     pub bytes: Vec<u8>,
@@ -219,11 +210,6 @@ fn check_printer(
 
 fn print_job(printer: &mut Printer<FileDriver>, job: &PrintJob) -> EscposResult<()> {
     println!("{}", format!("Incoming print job: {} {:?}", job.submission.message, job.submission.author));
-    let title = if job.submission.r#type == Wisdom {
-        String::from("Words of Wisdom")
-    } else {
-        String::from("Quote")
-    };
 
     let date_time = Utc::now()
         .with_timezone(&Chicago)
@@ -234,7 +220,7 @@ fn print_job(printer: &mut Printer<FileDriver>, job: &PrintJob) -> EscposResult<
         .smoothing(true)?
         .justify(JustifyMode::CENTER)?
         .size(3,2)?
-        .writeln(&*title)?
+        .writeln(&*"Quote")?
         .reset_size()?
         .reverse(false)?
         .bold(false)?
@@ -246,13 +232,10 @@ fn print_job(printer: &mut Printer<FileDriver>, job: &PrintJob) -> EscposResult<
 
     printer.feed()?
         .writeln(&*format!("\"{}\"", job.submission.message))?
-        .feed()?;
-
-    if let Some(author) = &job.submission.author {
-        printer.justify(JustifyMode::RIGHT)?
-            .bold(true)?
-            .writeln(&*format!("- {}", author))?;
-    }
+        .feed()?
+        .justify(JustifyMode::RIGHT)?
+        .bold(true)?
+        .writeln(&*format!("- {}", &job.submission.author))?;;
 
     if let Some(image) = &job.image {
         let dithered = prepare_receipt_image(&image.bytes)?;
