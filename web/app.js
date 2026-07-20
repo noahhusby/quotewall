@@ -128,7 +128,7 @@ form.addEventListener("submit", async (event) => {
         const submission = {
             type: "quote",
             message: messageInput.value.trim(),
-            author: authorInput.value.trim() || null,
+            author: authorInput.value.trim(),
         };
         const multipart = new FormData();
         multipart.append(
