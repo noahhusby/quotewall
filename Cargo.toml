@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = { version = "0.8.9", features = ["multipart"] }
-escpos = { version = "0.19.0", default-features = false, features = ["std", "graphics", "ui"] }
+escpos = { version = "0.20.0", default-features = false, features = ["std", "graphics", "ui"] }
 garde = { version = "0.23.0", features = ["derive"] }
 mime_guess = "2.0.5"
 rust-embed = "8.12.0"
